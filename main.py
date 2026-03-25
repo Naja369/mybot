@@ -4,7 +4,6 @@ import json
 import os
 import time
 import threading
-from flask import Flask
 
 # ======================= 【你的信息】 =======================
 BOT_TOKEN = "7640455754:AAEBhj0W3_fUqd-yYDgRAvFqiegILbK0stM"
@@ -13,21 +12,8 @@ MAX_VIDEO_DURATION = 180
 MAX_MEDIA_COUNT = 10
 # =============================================================
 
-app = Flask('')
 last_active_time = time.time()
-replying_user_id = None  # 持续回复用户ID
-
-@app.route('/')
-def home():
-    global last_active_time
-    last_active_time = time.time()
-    return "✅ 机器人运行中", 200
-
-def run_web():
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
-
-def keep_alive():
-    threading.Thread(target=run_web, daemon=True).start()
+replying_user_id = None
 
 # 数据文件
 DATA_FILE = "rules.json"
@@ -54,12 +40,11 @@ DEL_IDX = 2
 BROADCAST = 3
 INPUT_ID = 4
 
-# ===================== /start 欢迎语 =====================
+# ===================== /start =====================
 def start(update: Update, context: CallbackContext):
     global replying_user_id
     user_id = update.effective_user.id
 
-    # 管理员点 /start = 取消持续回复
     if user_id == ADMIN_ID:
         replying_user_id = None
         keyboard = [
@@ -70,14 +55,13 @@ def start(update: Update, context: CallbackContext):
         update.message.reply_text("✅ 已取消回复模式\n👑 管理员面板", reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True))
         return ConversationHandler.END
 
-    # 用户点 /start
     users.add(user_id)
     save_data()
     update.message.reply_text(
         "📢 要求：媒体不能超过10个，视频不能超过3分钟，\n且配好文案再发送！不然无法接收！"
     )
 
-# ===================== 持续回复用户（输入一次ID一直回复） =====================
+# ===================== 持续回复用户 =====================
 def start_reply(update: Update, context: CallbackContext):
     if update.effective_user.id != ADMIN_ID:
         return
@@ -161,16 +145,14 @@ def broadcast_send(update: Update, context):
     start(update, context)
     return ConversationHandler.END
 
-# ===================== 用户消息处理（支持一次性10个媒体 + 原样转发） =====================
+# ===================== 用户消息 =====================
 def handle_user_message(update: Update, context: CallbackContext):
-    global last_active_time
+    global last_active_time, replying_user_id
     last_active_time = time.time()
     user_id = update.effective_user.id
     msg = update.message
 
     if user_id == ADMIN_ID:
-        # 管理员持续回复用户
-        global replying_user_id
         if replying_user_id:
             try:
                 if msg.photo: context.bot.send_photo(replying_user_id, msg.photo[-1].file_id, caption=msg.caption)
@@ -181,7 +163,6 @@ def handle_user_message(update: Update, context: CallbackContext):
                 update.message.reply_text("❌ 发送失败", quote=False)
         return
 
-    # 限制：一次性最多10个媒体
     media_num = 0
     if msg.photo: media_num = len(msg.photo)
     if msg.video: media_num = 1
@@ -191,12 +172,10 @@ def handle_user_message(update: Update, context: CallbackContext):
         update.message.reply_text(f"❌ 最多发 {MAX_MEDIA_COUNT} 个媒体")
         return
 
-    # 视频时长限制
     if msg.video and msg.video.duration > MAX_VIDEO_DURATION:
         update.message.reply_text("❌ 视频不能超过3分钟")
         return
 
-    # 转发给管理员（原样显示图片/视频）
     user = update.effective_user
     context.bot.send_message(ADMIN_ID, f"👤 用户：{user.first_name}\n🆔 ID：{user.id}")
     
@@ -204,7 +183,6 @@ def handle_user_message(update: Update, context: CallbackContext):
     elif msg.video: context.bot.send_video(ADMIN_ID, msg.video.file_id, caption=msg.caption)
     elif msg.text: context.bot.send_message(ADMIN_ID, f"💬 {msg.text}")
 
-    # 关键词模糊匹配
     if msg.text:
         for kw, content in rules.items():
             if kw in msg.text:
@@ -217,7 +195,6 @@ def handle_user_message(update: Update, context: CallbackContext):
 
 # ===================== 启动 =====================
 def main():
-    keep_alive()
     updater = Updater(BOT_TOKEN)
     dp = updater.dispatcher
 
