@@ -1,9 +1,7 @@
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext, ConversationHandler
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import json
 import os
-import time
-import threading
 
 # ======================= 【你的信息】 =======================
 BOT_TOKEN = "7640455754:AAEBhj0W3_fUqd-yYDgRAvFqiegILbK0stM"
@@ -12,10 +10,8 @@ MAX_VIDEO_DURATION = 180
 MAX_MEDIA_COUNT = 10
 # =============================================================
 
-last_active_time = time.time()
 replying_user_id = None
 
-# 数据文件
 DATA_FILE = "rules.json"
 USER_FILE = "users.json"
 rules = {}
@@ -34,14 +30,8 @@ def save_data():
     with open(USER_FILE, "w", encoding="utf-8") as f:
         json.dump(list(users), f, ensure_ascii=False)
 
-# 状态
-GET_KW, GET_CONTENT = 0, 1
-DEL_IDX = 2
-BROADCAST = 3
-INPUT_ID = 4
-
 # ===================== /start =====================
-def start(update: Update, context: CallbackContext):
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global replying_user_id
     user_id = update.effective_user.id
 
@@ -52,115 +42,118 @@ def start(update: Update, context: CallbackContext):
             ["🗑 删除规则","📢 群发所有用户"],
             ["✉️ 持续回复用户"]
         ]
-        update.message.reply_text("✅ 已取消回复模式\n👑 管理员面板", reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True))
-        return ConversationHandler.END
+        await update.message.reply_text("✅ 已取消回复模式\n👑 管理员面板", reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True))
+        return
 
     users.add(user_id)
     save_data()
-    update.message.reply_text(
+    await update.message.reply_text(
         "📢 要求：媒体不能超过10个，视频不能超过3分钟，\n且配好文案再发送！不然无法接收！"
     )
 
 # ===================== 持续回复用户 =====================
-def start_reply(update: Update, context: CallbackContext):
+async def start_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
-    update.message.reply_text("✉️ 请输入用户ID，输入后可一直回复", reply_markup=ReplyKeyboardRemove())
-    return INPUT_ID
+    await update.message.reply_text("✉️ 请输入用户ID，输入后可一直回复", reply_markup=ReplyKeyboardRemove())
 
-def set_reply_user(update: Update, context: CallbackContext):
+async def set_reply_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global replying_user_id
     uid = update.message.text.strip()
     if not uid.isdigit():
-        update.message.reply_text("❌ ID必须是数字")
-        return INPUT_ID
-    
+        await update.message.reply_text("❌ ID必须是数字")
+        return
     replying_user_id = int(uid)
-    update.message.reply_text(f"✅ 已绑定用户 {replying_user_id}\n现在发任何内容都会直接发给TA\n发送 /start 取消")
-    return ConversationHandler.END
+    await update.message.reply_text(f"✅ 已绑定用户 {replying_user_id}\n现在发任何内容都会直接发给TA\n发送 /start 取消")
 
 # ===================== 关键词管理 =====================
-def add_start(update: Update, context):
-    if update.effective_user.id != ADMIN_ID: return ConversationHandler.END
-    update.message.reply_text("请输入关键词", reply_markup=ReplyKeyboardRemove())
-    return GET_KW
+async def add_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    await update.message.reply_text("请输入关键词", reply_markup=ReplyKeyboardRemove())
 
-def get_kw(update: Update, context):
+async def get_kw(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["kw"] = update.message.text.strip()
-    update.message.reply_text("发送回复内容")
-    return GET_CONTENT
+    await update.message.reply_text("发送回复内容")
 
-def save_kw(update: Update, context):
+async def save_kw(update: Update, context: ContextTypes.DEFAULT_TYPE):
     kw = context.user_data["kw"]
     msg = update.message
-    if msg.photo: rules[kw] = {"type":"photo","file":msg.photo[-1].file_id}
-    elif msg.video: rules[kw] = {"type":"video","file":msg.video.file_id}
-    elif msg.text: rules[kw] = {"type":"text","text":msg.text}
+    if msg.photo:
+        rules[kw] = {"type":"photo","file":msg.photo[-1].file_id}
+    elif msg.video:
+        rules[kw] = {"type":"video","file":msg.video.file_id}
+    elif msg.text:
+        rules[kw] = {"type":"text","text":msg.text}
     save_data()
-    update.message.reply_text("✅ 保存成功")
-    start(update, context)
-    return ConversationHandler.END
+    await update.message.reply_text("✅ 保存成功")
+    await start(update, context)
 
-def show_rules(update: Update, context):
-    if update.effective_user.id != ADMIN_ID: return
+async def show_rules(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
     text = f"📋 共 {len(rules)} 条\n"
     for i,k in enumerate(list(rules.keys())[:20]):
         text += f"{i+1}. {k}\n"
-    update.message.reply_text(text)
+    await update.message.reply_text(text)
 
-def del_start(update: Update, context):
-    if update.effective_user.id != ADMIN_ID: return ConversationHandler.END
-    show_rules(update, context)
-    update.message.reply_text("输入序号删除")
-    return DEL_IDX
+async def del_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    await show_rules(update, context)
+    await update.message.reply_text("输入序号删除")
 
-def del_done(update: Update, context):
+async def del_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         idx = int(update.message.text)-1
         del rules[list(rules.keys())[idx]]
         save_data()
-        update.message.reply_text("🗑 删除成功")
+        await update.message.reply_text("🗑 删除成功")
     except:
-        update.message.reply_text("❌ 错误")
-    start(update, context)
-    return ConversationHandler.END
+        await update.message.reply_text("❌ 错误")
+    await start(update, context)
 
 # ===================== 群发 =====================
-def broadcast_start(update: Update, context):
-    if update.effective_user.id != ADMIN_ID: return ConversationHandler.END
-    update.message.reply_text("发送群发内容（支持图文/视频+文字）\n/start 取消", reply_markup=ReplyKeyboardRemove())
-    return BROADCAST
+async def broadcast_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    await update.message.reply_text("发送群发内容（支持图文/视频+文字）\n/start 取消", reply_markup=ReplyKeyboardRemove())
 
-def broadcast_send(update: Update, context):
+async def broadcast_send(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
     success = 0
     for uid in users:
         try:
-            if msg.photo: context.bot.send_photo(uid, msg.photo[-1].file_id, caption=msg.caption)
-            elif msg.video: context.bot.send_video(uid, msg.video.file_id, caption=msg.caption)
-            elif msg.text: context.bot.send_message(uid, msg.text)
-            success +=1
-        except: continue
-    update.message.reply_text(f"✅ 群发成功：{success} 人")
-    start(update, context)
-    return ConversationHandler.END
+            if msg.photo:
+                await context.bot.send_photo(uid, msg.photo[-1].file_id, caption=msg.caption)
+            elif msg.video:
+                await context.bot.send_video(uid, msg.video.file_id, caption=msg.caption)
+            elif msg.text:
+                await context.bot.send_message(uid, msg.text)
+            success += 1
+        except:
+            continue
+    await update.message.reply_text(f"✅ 群发成功：{success} 人")
+    await start(update, context)
 
 # ===================== 用户消息 =====================
-def handle_user_message(update: Update, context: CallbackContext):
-    global last_active_time, replying_user_id
-    last_active_time = time.time()
+async def handle_user_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global replying_user_id
     user_id = update.effective_user.id
     msg = update.message
 
     if user_id == ADMIN_ID:
         if replying_user_id:
             try:
-                if msg.photo: context.bot.send_photo(replying_user_id, msg.photo[-1].file_id, caption=msg.caption)
-                elif msg.video: context.bot.send_video(replying_user_id, msg.video.file_id, caption=msg.caption)
-                elif msg.text: context.bot.send_message(replying_user_id, msg.text)
-                update.message.reply_text("✅ 已发送", quote=False)
+                if msg.photo:
+                    await context.bot.send_photo(replying_user_id, msg.photo[-1].file_id, caption=msg.caption)
+                elif msg.video:
+                    await context.bot.send_video(replying_user_id, msg.video.file_id, caption=msg.caption)
+                elif msg.text:
+                    await context.bot.send_message(replying_user_id, msg.text)
+                await update.message.reply_text("✅ 已发送", quote=False)
             except:
-                update.message.reply_text("❌ 发送失败", quote=False)
+                await update.message.reply_text("❌ 发送失败", quote=False)
         return
 
     media_num = 0
@@ -169,66 +162,54 @@ def handle_user_message(update: Update, context: CallbackContext):
     if msg.media_group_id: media_num = 100
 
     if media_num > MAX_MEDIA_COUNT:
-        update.message.reply_text(f"❌ 最多发 {MAX_MEDIA_COUNT} 个媒体")
+        await update.message.reply_text(f"❌ 最多发 {MAX_MEDIA_COUNT} 个媒体")
         return
 
     if msg.video and msg.video.duration > MAX_VIDEO_DURATION:
-        update.message.reply_text("❌ 视频不能超过3分钟")
+        await update.message.reply_text("❌ 视频不能超过3分钟")
         return
 
     user = update.effective_user
-    context.bot.send_message(ADMIN_ID, f"👤 用户：{user.first_name}\n🆔 ID：{user.id}")
+    await context.bot.send_message(ADMIN_ID, f"👤 用户：{user.first_name}\n🆔 ID：{user.id}")
     
-    if msg.photo: context.bot.send_photo(ADMIN_ID, msg.photo[-1].file_id, caption=msg.caption)
-    elif msg.video: context.bot.send_video(ADMIN_ID, msg.video.file_id, caption=msg.caption)
-    elif msg.text: context.bot.send_message(ADMIN_ID, f"💬 {msg.text}")
+    if msg.photo:
+        await context.bot.send_photo(ADMIN_ID, msg.photo[-1].file_id, caption=msg.caption)
+    elif msg.video:
+        await context.bot.send_video(ADMIN_ID, msg.video.file_id, caption=msg.caption)
+    elif msg.text:
+        await context.bot.send_message(ADMIN_ID, f"💬 {msg.text}")
 
     if msg.text:
         for kw, content in rules.items():
             if kw in msg.text:
                 try:
-                    if content["type"] == "text": update.message.reply_text(content["text"])
-                    elif content["type"] == "photo": update.message.reply_photo(content["file"])
-                    elif content["type"] == "video": update.message.reply_video(content["file"])
-                except: pass
+                    if content["type"] == "text":
+                        await update.message.reply_text(content["text"])
+                    elif content["type"] == "photo":
+                        await update.message.reply_photo(content["file"])
+                    elif content["type"] == "video":
+                        await update.message.reply_video(content["file"])
+                except:
+                    pass
                 return
 
 # ===================== 启动 =====================
 def main():
-    updater = Updater(BOT_TOKEN)
-    dp = updater.dispatcher
+    application = Application.builder().token(BOT_TOKEN).build()
 
-    dp.add_handler(ConversationHandler(
-        entry_points=[MessageHandler(Filters.regex("✉️ 持续回复用户"), start_reply)],
-        states={INPUT_ID: [MessageHandler(Filters.text & ~Filters.command, set_reply_user)]},
-        fallbacks=[CommandHandler("start", start)]
-    ))
-
-    dp.add_handler(ConversationHandler(
-        entry_points=[MessageHandler(Filters.regex("➕ 添加关键词"), add_start)],
-        states={GET_KW: [MessageHandler(Filters.text & ~Filters.command, get_kw)], GET_CONTENT: [MessageHandler(Filters.all & ~Filters.command, save_kw)]},
-        fallbacks=[CommandHandler("start", start)]
-    ))
-
-    dp.add_handler(ConversationHandler(
-        entry_points=[MessageHandler(Filters.regex("🗑 删除规则"), del_start)],
-        states={DEL_IDX: [MessageHandler(Filters.text & ~Filters.command, del_done)]},
-        fallbacks=[CommandHandler("start", start)]
-    ))
-
-    dp.add_handler(ConversationHandler(
-        entry_points=[MessageHandler(Filters.regex("📢 群发所有用户"), broadcast_start)],
-        states={BROADCAST: [MessageHandler(Filters.all & ~Filters.command, broadcast_send)]},
-        fallbacks=[CommandHandler("start", start)]
-    ))
-
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(MessageHandler(Filters.regex("📋 查看规则"), show_rules))
-    dp.add_handler(MessageHandler(Filters.all & ~Filters.command, handle_user_message))
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(MessageHandler(filters.Regex("^✉️ 持续回复用户$"), start_reply))
+    application.add_handler(MessageHandler(filters.Regex("^➕ 添加关键词$"), add_start))
+    application.add_handler(MessageHandler(filters.Regex("^📋 查看规则$"), show_rules))
+    application.add_handler(MessageHandler(filters.Regex("^🗑 删除规则$"), del_start))
+    application.add_handler(MessageHandler(filters.Regex("^📢 群发所有用户$"), broadcast_start))
+    
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_user_message))
+    application.add_handler(MessageHandler(filters.PHOTO, handle_user_message))
+    application.add_handler(MessageHandler(filters.VIDEO, handle_user_message))
 
     print("✅ 机器人启动成功 — 持续回复模式")
-    updater.start_polling()
-    updater.idle()
+    application.run_polling()
 
 if __name__ == "__main__":
     main()
