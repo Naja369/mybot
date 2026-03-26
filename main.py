@@ -110,7 +110,7 @@ def admin_actions(msg):
     # 群发消息
     if txt == "📢 群发消息":
         mode = "broadcast"
-        bot.send_message(cid, "📤 请发送群发内容（支持文字/图片/视频/图文/视频+文字/多图）", reply_markup=admin_buttons())
+        bot.send_message(cid, "📤 发送群发内容（支持文字/图片+文字/视频+文字）", reply_markup=admin_buttons())
         return
 
     # 添加关键词
@@ -185,22 +185,25 @@ def admin_actions(msg):
             bot.send_message(cid, "❌ 发送失败", reply_markup=admin_buttons())
         return
 
-    # ====================== 群发：支持所有格式 ======================
+    # ====================== 【修复：群发完美支持图片+文字 / 视频+文字】 ======================
     if mode == "broadcast":
         users = load_users()
         ok = 0
         for uid in users:
             try:
-                if msg.text:
+                # 文字
+                if msg.text and not msg.photo and not msg.video:
                     bot.send_message(uid, msg.text)
-                if msg.photo:
+                # 图片+文字
+                elif msg.photo:
                     bot.send_photo(uid, msg.photo[-1].file_id, caption=msg.caption)
-                if msg.video:
+                # 视频+文字
+                elif msg.video:
                     bot.send_video(uid, msg.video.file_id, caption=msg.caption)
                 ok += 1
             except:
                 pass
-        bot.send_message(cid, f"✅ 群发成功：发送给 {ok}/{len(users)} 人", reply_markup=admin_buttons())
+        bot.send_message(cid, f"✅ 群发成功：{ok}/{len(users)} 人", reply_markup=admin_buttons())
         reset_all()
         return
 
@@ -248,5 +251,5 @@ def user_msg(msg):
 
 # ====================== 启动 ======================
 if __name__ == "__main__":
-    print("✅ 机器人启动成功 - 最终完整版")
+    print("✅ 机器人启动成功 - 最终修复版")
     bot.infinity_polling()
