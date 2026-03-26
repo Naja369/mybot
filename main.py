@@ -4,7 +4,7 @@ import json
 import os
 
 # ====================== 【你的信息】 ======================
-BOT_TOKEN = "7640455754:AAEBhj0W3_fUqd-yYDgRAvFqiegILbK0stM"
+BOT_TOKEN = "7640455754:AAFDGnMMietMVA8jGbpa2Tii5aATc0PEkdQ"
 ADMIN_ID = 6649062737
 # ==========================================================
 
