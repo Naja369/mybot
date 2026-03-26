@@ -11,16 +11,14 @@ ADMIN_ID = 6649062737
 
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode=None)
 
-# 状态管理
-mode = None          # reply / broadcast / set_key1 / set_key2 / del_key
-reply_uid = None     # 持续回复的用户
-temp_key = None      # 临时关键词
+mode = None
+reply_uid = None
+temp_key = None
 
-# 5分钟提示用户
 user_last_notify = {}
 NOTIFY_COOLDOWN = 300
 
-# ====================== 数据存储 ======================
+# ====================== 数据 ======================
 def load_users():
     if not os.path.exists("users.json"):
         return []
@@ -56,7 +54,7 @@ def del_key(key):
     with open("keys.json", "w", encoding="utf-8") as f:
         json.dump(keys, f, ensure_ascii=False)
 
-# ====================== 重置所有状态 ======================
+# ====================== 重置状态 ======================
 def reset_all():
     global mode, reply_uid, temp_key
     mode = None
@@ -93,38 +91,35 @@ def admin_actions(msg):
     cid = msg.chat.id
     txt = msg.text or ""
 
-    # ============== 点击任意新按钮 → 自动重置上一个状态 ==============
-    if txt in [
-        "📩 回复用户", "📢 群发消息",
-        "🔑 添加关键词", "📋 查看关键词", "🗑 删除关键词"
-    ]:
+    # 点新按钮 → 自动清空上一个状态
+    if txt in ["📩 回复用户", "📢 群发消息", "🔑 添加关键词", "📋 查看关键词", "🗑 删除关键词"]:
         reset_all()
 
-    # ========== 取消 ==========
+    # 取消
     if txt in ["❌ 全部取消","❌ 取消回复","❌ 取消群发"]:
         reset_all()
-        bot.send_message(cid, "✅ 已重置所有状态", reply_markup=admin_buttons())
+        bot.send_message(cid, "✅ 已重置", reply_markup=admin_buttons())
         return
 
-    # ========== 回复用户 ==========
+    # 回复用户
     if txt == "📩 回复用户":
         mode = "reply"
         bot.send_message(cid, "✏️ 输入用户ID：", reply_markup=admin_buttons())
         return
 
-    # ========== 群发 ==========
+    # 群发消息
     if txt == "📢 群发消息":
         mode = "broadcast"
-        bot.send_message(cid, "📤 发送群发内容：", reply_markup=admin_buttons())
+        bot.send_message(cid, "📤 请发送群发内容（支持文字/图片/视频/图文/视频+文字/多图）", reply_markup=admin_buttons())
         return
 
-    # ========== 添加关键词 ==========
+    # 添加关键词
     if txt == "🔑 添加关键词":
         mode = "set_key1"
         bot.send_message(cid, "🔑 输入关键词：", reply_markup=admin_buttons())
         return
 
-    # ========== 查看关键词 ==========
+    # 查看关键词
     if txt == "📋 查看关键词":
         keys = load_keys()
         if not keys:
@@ -136,26 +131,26 @@ def admin_actions(msg):
             bot.send_message(cid, res, reply_markup=admin_buttons())
         return
 
-    # ========== 删除关键词 ==========
+    # 删除关键词
     if txt == "🗑 删除关键词":
         mode = "del_key"
         bot.send_message(cid, "🗑 输入序号或关键词：", reply_markup=admin_buttons())
         return
 
-    # ========== 绑定ID ==========
+    # 绑定用户ID
     if mode == "reply" and txt.isdigit():
         reply_uid = int(txt)
-        bot.send_message(cid, f"✅ 已绑定：{reply_uid}，可持续回复", reply_markup=admin_buttons())
+        bot.send_message(cid, f"✅ 已绑定：{reply_uid}", reply_markup=admin_buttons())
         return
 
-    # ========== 设置关键词步骤2 ==========
+    # 设置关键词步骤2
     if mode == "set_key1" and txt:
         temp_key = txt
         mode = "set_key2"
-        bot.send_message(cid, "✅ 发送回复内容（文字/图片/视频）：", reply_markup=admin_buttons())
+        bot.send_message(cid, "✅ 发送回复内容：", reply_markup=admin_buttons())
         return
 
-    # ========== 保存关键词 ==========
+    # 保存关键词
     if mode == "set_key2" and temp_key:
         data = {}
         if msg.text:
@@ -169,36 +164,43 @@ def admin_actions(msg):
         reset_all()
         return
 
-    # ========== 删除关键词 ==========
+    # 删除关键词
     if mode == "del_key" and txt:
         del_key(txt)
         bot.send_message(cid, "🗑 删除成功", reply_markup=admin_buttons())
         reset_all()
         return
 
-    # ========== 持续回复用户 ==========
+    # 持续回复用户
     if reply_uid is not None:
         try:
-            if msg.text: bot.send_message(reply_uid, msg.text)
-            if msg.photo: bot.send_photo(reply_uid, msg.photo[-1].file_id, caption=msg.caption)
-            if msg.video: bot.send_video(reply_uid, msg.video.file_id, caption=msg.caption)
+            if msg.text:
+                bot.send_message(reply_uid, msg.text)
+            if msg.photo:
+                bot.send_photo(reply_uid, msg.photo[-1].file_id, caption=msg.caption)
+            if msg.video:
+                bot.send_video(reply_uid, msg.video.file_id, caption=msg.caption)
             bot.send_message(cid, "✅ 已发送", reply_markup=admin_buttons())
         except:
             bot.send_message(cid, "❌ 发送失败", reply_markup=admin_buttons())
         return
 
-    # ========== 群发执行 ==========
+    # ====================== 群发：支持所有格式 ======================
     if mode == "broadcast":
         users = load_users()
         ok = 0
         for uid in users:
             try:
-                if msg.text: bot.send_message(uid, msg.text)
-                if msg.photo: bot.send_photo(uid, msg.photo[-1].file_id, caption=msg.caption)
-                if msg.video: bot.send_video(uid, msg.video.file_id, caption=msg.caption)
-                ok +=1
-            except: pass
-        bot.send_message(cid, f"✅ 群发成功：{ok}/{len(users)}", reply_markup=admin_buttons())
+                if msg.text:
+                    bot.send_message(uid, msg.text)
+                if msg.photo:
+                    bot.send_photo(uid, msg.photo[-1].file_id, caption=msg.caption)
+                if msg.video:
+                    bot.send_video(uid, msg.video.file_id, caption=msg.caption)
+                ok += 1
+            except:
+                pass
+        bot.send_message(cid, f"✅ 群发成功：发送给 {ok}/{len(users)} 人", reply_markup=admin_buttons())
         reset_all()
         return
 
@@ -210,35 +212,41 @@ def user_msg(msg):
     now = time.time()
 
     media_count = 0
-    if msg.photo: media_count +=1
-    if msg.video: media_count +=1
+    if msg.photo: media_count += 1
+    if msg.video: media_count += 1
     video_long = msg.video and msg.video.duration > 180 if msg.video else False
 
-    if media_count >10 or video_long:
+    if media_count > 10 or video_long:
         bot.send_message(uid, RULE)
         return
 
-    # 关键词
+    # 关键词触发
     text = msg.text or ""
     keys = load_keys()
     for kw in keys:
         if kw in text:
             d = keys[kw]
-            if d["type"]=="text": bot.send_message(uid, d["txt"])
-            elif d["type"]=="photo": bot.send_photo(uid, d["file"], caption=d.get("cap",""))
-            elif d["type"]=="video": bot.send_video(uid, d["file"], caption=d.get("cap",""))
+            if d["type"] == "text":
+                bot.send_message(uid, d["txt"])
+            elif d["type"] == "photo":
+                bot.send_photo(uid, d["file"], caption=d.get("cap",""))
+            elif d["type"] == "video":
+                bot.send_video(uid, d["file"], caption=d.get("cap",""))
 
-    # 5分钟提示一次
+    # 5分钟内只提示一次用户信息
     if uid not in user_last_notify or now - user_last_notify[uid] > NOTIFY_COOLDOWN:
         user_last_notify[uid] = now
         bot.send_message(ADMIN_ID, f"👤 {msg.from_user.first_name}\n🆔 {uid}")
 
     # 转发内容
-    if msg.text: bot.send_message(ADMIN_ID, f"💬 {msg.text}")
-    if msg.photo: bot.send_photo(ADMIN_ID, msg.photo[-1].file_id, caption=msg.caption)
-    if msg.video: bot.send_video(ADMIN_ID, msg.video.file_id, caption=msg.caption)
+    if msg.text:
+        bot.send_message(ADMIN_ID, f"💬 {msg.text}")
+    if msg.photo:
+        bot.send_photo(ADMIN_ID, msg.photo[-1].file_id, caption=msg.caption)
+    if msg.video:
+        bot.send_video(ADMIN_ID, msg.video.file_id, caption=msg.caption)
 
 # ====================== 启动 ======================
 if __name__ == "__main__":
-    print("✅ 机器人启动成功 - 最终完美版")
+    print("✅ 机器人启动成功 - 最终完整版")
     bot.infinity_polling()
