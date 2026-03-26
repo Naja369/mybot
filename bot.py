@@ -172,34 +172,38 @@ def set_reply(message):
     else:
         bot.reply_to(message, "❌ 请输入数字ID")
 
-# ==================== 【修复】发送组合内容 ====================
-def send_combined_content(chat_id, rule):
+# ==================== 发送组合内容（和 smart_vbot 一模一样） ====================
+def send_combined(chat_id, rule):
     caption = rule.get("caption", "")
     media = rule.get("media", [])
-    media_group = []
-
+    
+    media_list = []
+    has_text = False
+    
     for item in media:
         if item["type"] == "photo":
-            media_group.append(telebot.InputMediaPhoto(item["file_id"]))
+            media_list.append(telebot.InputMediaPhoto(item["file_id"]))
         elif item["type"] == "video":
-            media_group.append(telebot.InputMediaVideo(item["file_id"]))
+            media_list.append(telebot.InputMediaVideo(item["file_id"]))
         elif item["type"] == "text":
             bot.send_message(chat_id, item["text"])
+            has_text = True
 
-    if media_group:
-        bot.send_media_group(chat_id, media_group)
+    if media_list:
+        bot.send_media_group(chat_id, media_list)
 
-    if caption and len(media_group) > 0:
-        bot.send_message(chat_id, f"📝 {caption}")
+    if caption and not has_text and media_list:
+        bot.send_message(chat_id, caption)
 
-# ==================== 【修复】用户消息处理（关键词必触发） ====================
+# ==================== 【smart_vbot 同款模糊触发机制】 ====================
 @bot.message_handler(content_types=["text", "photo", "video"])
-def handle_all(message):
+def handle_message(message):
     global replying_user_id
     user_id = message.from_user.id
-    user_text = (message.text or message.caption or "").strip()
+    text = message.text or message.caption or ""
+    text = text.strip().lower()
 
-    # 管理员回复用户
+    # 管理员回复
     if user_id == ADMIN_ID and replying_user_id is not None:
         try:
             if message.photo:
@@ -213,12 +217,12 @@ def handle_all(message):
             bot.reply_to(message, "❌ 发送失败")
         return
 
-    # 视频时长限制
+    # 视频限制
     if message.video and message.video.duration > MAX_VIDEO_DURATION:
         bot.reply_to(message, "❌ 视频不能超过3分钟")
         return
 
-    # 用户消息转发给管理员
+    # 转发给管理员
     if user_id != ADMIN_ID:
         try:
             bot.send_message(ADMIN_ID, f"👤 {message.from_user.first_name} | 🆔 {user_id}")
@@ -231,22 +235,24 @@ def handle_all(message):
         except:
             pass
 
-    # ==================== 【核心修复】关键词触发 ====================
+    # ==================== 核心：smart_vbot 模糊触发 ====================
     if user_id != ADMIN_ID:
-        for kw, rule in rules.items():
-            if kw in user_text:
-                send_combined_content(user_id, rule)
+        for keyword, rule in rules.items():
+            kw = keyword.lower()
+            if kw in text:
+                send_combined(user_id, rule)
                 return
 
-# ==================== 防超时 Web ====================
+# ==================== 防超时 ====================
 app = Flask(__name__)
 @app.route("/")
-def home(): return "✅ 运行中"
+def index(): return "ok"
+
 def run_web():
     app.run(host="0.0.0.0", port=10000)
 
 # ==================== 启动 ====================
 if __name__ == "__main__":
     threading.Thread(target=run_web, daemon=True).start()
-    print("✅ 机器人启动成功")
-    bot.infinity_polling(timeout=10, long_polling_timeout=5, skip_pending=True)
+    print("✅ 机器人已启动 (smart_vbot 模式)")
+    bot.infinity_polling(timeout=15, long_polling_timeout=5, skip_pending=True)
