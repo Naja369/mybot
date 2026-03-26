@@ -27,6 +27,40 @@ NOTIFY_COOLDOWN = 300
 
 # ====================== 数据存储 ======================
 # [保持原有的 load_users, save_user, load_keys, save_key, del_key 函数不变]
+def load_users():
+    if not os.path.exists("users.json"):
+        return []
+    with open("users.json", "r", encoding="utf-8") as f:
+        return list(set(json.load(f)))
+
+def save_user(uid):
+    users = load_users()
+    if uid not in users:
+        users.append(uid)
+        with open("users.json", "w", encoding="utf-8") as f:
+            json.dump(users, f, ensure_ascii=False)
+
+def load_keys():
+    if not os.path.exists("keys.json"):
+        return {}
+    with open("keys.json", "r", encoding="utf-8") as f:
+        return json.load(f)
+
+def save_key(keyword, medias):
+    keys = load_keys()
+    keys[keyword] = medias
+    with open("keys.json", "w", encoding="utf-8") as f:
+        json.dump(keys, f, ensure_ascii=False)
+
+def del_key(key):
+    keys = load_keys()
+    key_list = list(keys.keys())
+    if key.isdigit() and 1 <= int(key) <= len(key_list):
+        del keys[key_list[int(key)-1]]
+    elif key in keys:
+        del keys[key]
+    with open("keys.json", "w", encoding="utf-8") as f:
+        json.dump(keys, f, ensure_ascii=False)
 
 # ====================== 重置状态 ======================
 def reset_all():
