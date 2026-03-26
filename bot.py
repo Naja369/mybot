@@ -1,6 +1,8 @@
 import json
 import os
 import telebot
+import threading
+import time
 
 # ==================== 环境变量 ====================
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -37,7 +39,7 @@ def save_data():
 temp_kw = None
 replying_user_id = None
 
-# ==================== 管理员菜单 ====================
+# ==================== 管理员按钮菜单 ====================
 def admin_menu(message):
     keyboard = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     keyboard.add(
@@ -218,18 +220,26 @@ def handle_all(message):
             bot.send_message(ADMIN_ID, f"💬 {message.text}")
 
     # 关键词触发
-    text = (message.text or message.caption or "").lower()
+    text = (message.text or message.caption or "")
     for kw, rule in rules.items():
         if kw in text:
             send_combined(uid, rule)
             return
 
-# ==================== 纯后台启动（无端口！） ====================
+# ==================== 伪Web服务，防止超时（免费Web Service专用） ====================
+from flask import Flask
+app = Flask(__name__)
+
+@app.route("/")
+def index():
+    return "✅ 机器人运行中"
+
+def run_web():
+    app.run(host="0.0.0.0", port=10000)
+
+# ==================== 启动 ====================
 if __name__ == "__main__":
-    print("✅ 后台工作进程启动 — 无端口、无监听、永不超时")
-    # 纯轮询，不占用任何端口 → 解决超时
-    bot.infinity_polling(
-        timeout=15,
-        long_polling_timeout=5,
-        skip_pending=True
-    )
+    # 启动伪Web，防止超时
+    threading.Thread(target=run_web, daemon=True).start()
+    print("✅ 机器人启动（Web Service 免费版）")
+    bot.infinity_polling(timeout=15, long_polling_timeout=5, skip_pending=True)
