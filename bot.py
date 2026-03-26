@@ -7,7 +7,6 @@ BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID"))
 
 MAX_VIDEO_DURATION = 180
-MAX_MEDIA_COUNT = 10
 # ==================================================
 
 bot = telebot.TeleBot(BOT_TOKEN)
@@ -38,7 +37,7 @@ def save_data():
 temp_kw = None
 replying_user_id = None
 
-# ==================== 管理员按钮菜单 ====================
+# ==================== 管理员菜单 ====================
 def admin_menu(message):
     keyboard = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     keyboard.add(
@@ -48,49 +47,44 @@ def admin_menu(message):
         "📢 群发所有用户",
         "✉️ 一对一回复用户"
     )
-    bot.reply_to(message, "👑 管理员面板\n请点击按钮操作", reply_markup=keyboard)
+    bot.reply_to(message, "👑 管理员面板", reply_markup=keyboard)
 
 # ==================== /start ====================
 @bot.message_handler(commands=["start"])
 def start(message):
     global temp_kw, replying_user_id
-    user_id = message.from_user.id
-
-    # 重置所有状态
     temp_kw = None
     replying_user_id = None
 
-    if user_id == ADMIN_ID:
+    if message.from_user.id == ADMIN_ID:
         admin_menu(message)
         return
 
-    # 用户
-    users.add(user_id)
+    users.add(message.from_user.id)
     save_data()
-    bot.reply_to(message, "📢 发送文字/图片/视频，我会转发给管理员\n包含关键词可自动回复")
+    bot.reply_to(message, "📢 发送消息即可联系管理员")
 
 # ==================== 添加关键词 ====================
 @bot.message_handler(func=lambda m: m.text == "➕ 添加关键词")
 def add_kw(message):
     if message.from_user.id != ADMIN_ID:
         return
-    bot.reply_to(message, "🔑 请输入关键词", reply_markup=telebot.types.ReplyKeyboardRemove())
+    bot.reply_to(message, "🔑 输入关键词", reply_markup=telebot.types.ReplyKeyboardRemove())
     bot.register_next_step_handler(message, get_kw)
 
 def get_kw(message):
     global temp_kw
     temp_kw = message.text.strip()
-    bot.reply_to(message, "📤 请上传回复内容（可文字+图片+视频）")
+    bot.reply_to(message, "📤 上传内容（文字+图片+视频）")
     bot.register_next_step_handler(message, save_content)
 
 def save_content(message):
     global temp_kw
-    if temp_kw is None:
+    if not temp_kw:
         return
 
     caption = message.caption or message.text or ""
     media = []
-
     if message.photo:
         media.append({"type": "photo", "file_id": message.photo[-1].file_id})
     if message.video:
@@ -100,11 +94,11 @@ def save_content(message):
 
     rules[temp_kw] = {"caption": caption, "media": media}
     save_data()
-    bot.reply_to(message, "✅ 关键词保存成功！")
+    bot.reply_to(message, "✅ 保存成功")
     temp_kw = None
     admin_menu(message)
 
-# ==================== 查看关键词（带编号） ====================
+# ==================== 查看关键词 ====================
 @bot.message_handler(func=lambda m: m.text == "📋 查看关键词")
 def list_kw(message):
     if message.from_user.id != ADMIN_ID:
@@ -112,9 +106,9 @@ def list_kw(message):
     if not rules:
         bot.reply_to(message, "📭 暂无关键词")
         return
-    text = "📋 关键词列表（编号顺序）\n"
-    for i, key in enumerate(list(rules.keys()), 1):
-        text += f"{i}. {key}\n"
+    text = "📋 关键词列表\n"
+    for i, k in enumerate(list(rules.keys()), 1):
+        text += f"{i}. {k}\n"
     bot.reply_to(message, text)
 
 # ==================== 删除关键词 ====================
@@ -123,18 +117,16 @@ def del_kw(message):
     if message.from_user.id != ADMIN_ID:
         return
     list_kw(message)
-    bot.reply_to(message, "🗑 请输入要删除的**数字编号**", reply_markup=telebot.types.ReplyKeyboardRemove())
+    bot.reply_to(message, "🗑 输入编号删除", reply_markup=telebot.types.ReplyKeyboardRemove())
     bot.register_next_step_handler(message, do_del)
 
 def do_del(message):
     try:
-        idx = int(message.text) - 1
-        keys = list(rules.keys())
-        del rules[keys[idx]]
+        del rules[list(rules.keys())[int(message.text)-1]]
         save_data()
         bot.reply_to(message, "✅ 删除成功")
     except:
-        bot.reply_to(message, "❌ 编号错误")
+        bot.reply_to(message, "❌ 失败")
     admin_menu(message)
 
 # ==================== 群发 ====================
@@ -142,7 +134,7 @@ def do_del(message):
 def broadcast(message):
     if message.from_user.id != ADMIN_ID:
         return
-    bot.reply_to(message, "📢 请发送群发内容", reply_markup=telebot.types.ReplyKeyboardRemove())
+    bot.reply_to(message, "📢 发送群发内容", reply_markup=telebot.types.ReplyKeyboardRemove())
     bot.register_next_step_handler(message, do_broadcast)
 
 def do_broadcast(message):
@@ -155,58 +147,51 @@ def do_broadcast(message):
                 bot.send_video(uid, message.video.file_id, caption=message.caption)
             else:
                 bot.send_message(uid, message.text)
-            success += 1
+            success +=1
         except:
             continue
-    bot.reply_to(message, f"✅ 群发完成：{success} 人")
+    bot.reply_to(message, f"✅ 发送完成 {success} 人")
     admin_menu(message)
 
-# ==================== 一对一回复用户 ====================
+# ==================== 一对一回复 ====================
 @bot.message_handler(func=lambda m: m.text == "✉️ 一对一回复用户")
 def reply_user(message):
     if message.from_user.id != ADMIN_ID:
         return
-    bot.reply_to(message, "✉️ 请输入用户ID", reply_markup=telebot.types.ReplyKeyboardRemove())
+    bot.reply_to(message, "✉️ 输入用户ID", reply_markup=telebot.types.ReplyKeyboardRemove())
     bot.register_next_step_handler(message, set_reply)
 
 def set_reply(message):
     global replying_user_id
-    uid = message.text.strip()
-    if not uid.isdigit():
-        bot.reply_to(message, "❌ 请输入数字ID")
-        bot.register_next_step_handler(message, set_reply)
-        return
-    replying_user_id = int(uid)
-    bot.reply_to(message, f"✅ 已绑定用户 {replying_user_id}\n发送内容将直接回复对方")
+    if message.text.isdigit():
+        replying_user_id = int(message.text)
+        bot.reply_to(message, f"✅ 已绑定 {replying_user_id}")
+    else:
+        bot.reply_to(message, "❌ ID错误")
 
-# ==================== 发送组合内容给用户 ====================
+# ==================== 发送组合内容 ====================
 def send_combined(chat_id, rule):
     caption = rule.get("caption", "")
     media = rule.get("media", [])
     group = []
-    has_text = False
-
     for item in media:
         if item["type"] == "photo":
             group.append(telebot.InputMediaPhoto(item["file_id"], caption=caption if not group else ""))
-        elif item["type"] == "video":
+        if item["type"] == "video":
             group.append(telebot.InputMediaVideo(item["file_id"], caption=caption if not group else ""))
-        elif item["type"] == "text":
+        if item["type"] == "text":
             bot.send_message(chat_id, item["text"])
-            has_text = True
-
     if group:
         bot.send_media_group(chat_id, group)
 
-# ==================== 用户消息处理 ====================
+# ==================== 消息处理 ====================
 @bot.message_handler(content_types=["text", "photo", "video"])
 def handle_all(message):
     global replying_user_id
-    user_id = message.from_user.id
-    text = message.text or message.caption or ""
+    uid = message.from_user.id
 
-    # 管理员一对一回复
-    if user_id == ADMIN_ID and replying_user_id is not None:
+    # 管理员回复
+    if uid == ADMIN_ID and replying_user_id is not None:
         try:
             if message.photo:
                 bot.send_photo(replying_user_id, message.photo[-1].file_id, caption=message.caption)
@@ -216,31 +201,35 @@ def handle_all(message):
                 bot.send_message(replying_user_id, message.text)
             bot.reply_to(message, "✅ 已发送")
         except:
-            bot.reply_to(message, "❌ 发送失败")
+            bot.reply_to(message, "❌ 失败")
         return
 
-    # 用户限制
+    # 视频限制
     if message.video and message.video.duration > MAX_VIDEO_DURATION:
         bot.reply_to(message, "❌ 视频不能超过3分钟")
         return
 
     # 转发给管理员
-    if user_id != ADMIN_ID:
-        bot.send_message(ADMIN_ID, f"👤 {message.from_user.first_name}\n🆔 {user_id}")
-        if message.photo:
-            bot.send_photo(ADMIN_ID, message.photo[-1].file_id, caption=message.caption)
-        if message.video:
-            bot.send_video(ADMIN_ID, message.video.file_id, caption=message.caption)
+    if uid != ADMIN_ID:
+        bot.send_message(ADMIN_ID, f"👤 {message.from_user.first_name} | 🆔 {uid}")
+        if message.photo: bot.send_photo(ADMIN_ID, message.photo[-1].file_id, caption=message.caption)
+        if message.video: bot.send_video(ADMIN_ID, message.video.file_id, caption=message.caption)
         if message.text and not message.photo and not message.video:
             bot.send_message(ADMIN_ID, f"💬 {message.text}")
 
-    # 关键词模糊触发
+    # 关键词触发
+    text = (message.text or message.caption or "").lower()
     for kw, rule in rules.items():
         if kw in text:
-            send_combined(user_id, rule)
+            send_combined(uid, rule)
             return
 
-# ==================== 启动 ====================
+# ==================== 纯后台启动（无端口！） ====================
 if __name__ == "__main__":
-    print("✅ 机器人运行中 — Render Worker 永不休眠")
-    bot.infinity_polling(timeout=10, long_polling_timeout=5)
+    print("✅ 后台工作进程启动 — 无端口、无监听、永不超时")
+    # 纯轮询，不占用任何端口 → 解决超时
+    bot.infinity_polling(
+        timeout=15,
+        long_polling_timeout=5,
+        skip_pending=True
+    )
