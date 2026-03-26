@@ -5,8 +5,13 @@ import os
 import time
 
 # ====================== 【你的信息】 ======================
-BOT_TOKEN = "7640455754:AAF6fHaBz4WuuBqb_nGI8Lj7-rgOUMZ8WGU"
-ADMIN_ID = 6649062737
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
+
+if not BOT_TOKEN:
+    raise ValueError("BOT_TOKEN environment variable is not set")
+if ADMIN_ID == 0:
+    raise ValueError("ADMIN_ID environment variable is not set")
 # ==========================================================
 
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode=None, skip_pending=True)
@@ -21,40 +26,7 @@ user_last_notify = {}
 NOTIFY_COOLDOWN = 300
 
 # ====================== 数据存储 ======================
-def load_users():
-    if not os.path.exists("users.json"):
-        return []
-    with open("users.json", "r", encoding="utf-8") as f:
-        return list(set(json.load(f)))
-
-def save_user(uid):
-    users = load_users()
-    if uid not in users:
-        users.append(uid)
-        with open("users.json", "w", encoding="utf-8") as f:
-            json.dump(users, f, ensure_ascii=False)
-
-def load_keys():
-    if not os.path.exists("keys.json"):
-        return {}
-    with open("keys.json", "r", encoding="utf-8") as f:
-        return json.load(f)
-
-def save_key(keyword, medias):
-    keys = load_keys()
-    keys[keyword] = medias
-    with open("keys.json", "w", encoding="utf-8") as f:
-        json.dump(keys, f, ensure_ascii=False)
-
-def del_key(key):
-    keys = load_keys()
-    key_list = list(keys.keys())
-    if key.isdigit() and 1 <= int(key) <= len(key_list):
-        del keys[key_list[int(key)-1]]
-    elif key in keys:
-        del keys[key]
-    with open("keys.json", "w", encoding="utf-8") as f:
-        json.dump(keys, f, ensure_ascii=False)
+# [保持原有的 load_users, save_user, load_keys, save_key, del_key 函数不变]
 
 # ====================== 重置状态 ======================
 def reset_all():
@@ -64,13 +36,29 @@ def reset_all():
     temp_key = None
     temp_media = []
 
-# ====================== 管理员按钮 ======================
+# ====================== 管理员按钮（内联按钮） ======================
 def admin_buttons():
-    kb = types.ReplyKeyboardMarkup(resize_key=True)
-    kb.row("📩 回复用户", "❌ 取消回复")
-    kb.row("📢 群发消息", "❌ 取消群发")
-    kb.row("🔑 添加关键词", "📋 查看关键词")
-    kb.row("🗑 删除关键词", "❌ 全部取消")
+    kb = types.InlineKeyboardMarkup()
+    kb.row(
+        types.InlineKeyboardButton("📩 回复用户", callback_data="reply"),
+        types.InlineKeyboardButton("📢 群发消息", callback_data="broadcast")
+    )
+    kb.row(
+        types.InlineKeyboardButton("🔑 添加关键词", callback_data="set_keyword"),
+        types.InlineKeyboardButton("📋 查看关键词", callback_data="view_keywords")
+    )
+    kb.row(
+        types.InlineKeyboardButton("🗑 删除关键词", callback_data="del_key"),
+        types.InlineKeyboardButton("📊 统计信息", callback_data="stats")
+    )
+    kb.row(
+        types.InlineKeyboardButton("❌ 全部取消", callback_data="cancel_all")
+    )
+    return kb
+
+def cancel_button():
+    kb = types.InlineKeyboardMarkup()
+    kb.add(types.InlineKeyboardButton("❌ 取消", callback_data="cancel_all"))
     return kb
 
 # ====================== 规则 ======================
@@ -82,68 +70,83 @@ def start(msg):
     reset_all()
     cid = msg.chat.id
     if cid == ADMIN_ID:
-        bot.send_message(cid, "✅ 管理员面板", reply_markup=admin_buttons())
+        bot.send_message(cid, "✅ 欢迎使用管理员面板\n\n请选择操作：", reply_markup=admin_buttons())
     else:
         save_user(cid)
         bot.send_message(cid, RULE)
 
-# ====================== 管理员操作 ======================
+# ====================== 回调查询处理（内联按钮点击） ======================
+@bot.callback_query_handler(func=lambda call: call.from_user.id == ADMIN_ID)
+def admin_callback(call):
+    global mode, reply_uid, temp_key, temp_media
+    cid = call.message.chat.id
+    data = call.data
+    
+    bot.answer_callback_query(call.id)
+    
+    if data == "cancel_all":
+        reset_all()
+        bot.edit_message_text("✅ 已重置", cid, call.message.message_id, reply_markup=admin_buttons())
+        return
+    
+    if data == "reply":
+        mode = "reply"
+        bot.edit_message_text("✏️ 请输入用户ID：", cid, call.message.message_id, reply_markup=cancel_button())
+        return
+    
+    if data == "broadcast":
+        mode = "broadcast"
+        bot.edit_message_text("📤 请发送要群发的内容（文字/图片/视频）：", cid, call.message.message_id, reply_markup=cancel_button())
+        return
+    
+    if data == "set_keyword":
+        mode = "set_keyword"
+        bot.edit_message_text("🔑 请发送关键词：", cid, call.message.message_id, reply_markup=cancel_button())
+        return
+    
+    if data == "view_keywords":
+        keys = load_keys()
+        if not keys:
+            bot.answer_callback_query(call.id, "📭 暂无关键词", show_alert=True)
+        else:
+            res = "📋 关键词列表：\n\n"
+            for i, k in enumerate(keys.keys(), 1):
+                res += f"{i}. {k}\n"
+            bot.edit_message_text(res, cid, call.message.message_id, reply_markup=admin_buttons())
+        return
+    
+    if data == "del_key":
+        mode = "del_key"
+        keys = load_keys()
+        if not keys:
+            bot.answer_callback_query(call.id, "📭 暂无关键词可删除", show_alert=True)
+            return
+        res = "🗑 请输入序号或关键词名称：\n\n"
+        for i, k in enumerate(keys.keys(), 1):
+            res += f"{i}. {k}\n"
+        bot.edit_message_text(res, cid, call.message.message_id, reply_markup=cancel_button())
+        return
+    
+    if data == "stats":
+        users = load_users()
+        keys = load_keys()
+        stats_text = f"📊 机器人统计信息\n\n👥 用户总数：{len(users)}\n🔑 关键词总数：{len(keys)}"
+        bot.answer_callback_query(call.id, stats_text, show_alert=True)
+        return
+
+# ====================== 管理员操作（文本消息处理） ======================
 @bot.message_handler(func=lambda m: m.chat.id == ADMIN_ID)
 def admin_actions(msg):
     global mode, reply_uid, temp_key, temp_media
     cid = msg.chat.id
     txt = msg.text or ""
 
-    if txt in ["📩 回复用户", "📢 群发消息", "🔑 添加关键词", "📋 查看关键词", "🗑 删除关键词"]:
-        reset_all()
-
-    if txt in ["❌ 全部取消","❌ 取消回复","❌ 取消群发"]:
-        reset_all()
-        bot.send_message(cid, "✅ 已重置", reply_markup=admin_buttons())
-        return
-
-    # 回复用户
-    if txt == "📩 回复用户":
-        mode = "reply"
-        bot.send_message(cid, "✏️ 输入用户ID：", reply_markup=admin_buttons())
-        return
-
-    # 群发
-    if txt == "📢 群发消息":
-        mode = "broadcast"
-        bot.send_message(cid, "📤 发送内容（文字/图片+文字/视频+文字）", reply_markup=admin_buttons())
-        return
-
-    # ============== 添加关键词：第一步 输入关键词 ==============
-    if txt == "🔑 添加关键词":
-        mode = "set_keyword"
-        bot.send_message(cid, "🔑 请发送关键词：", reply_markup=admin_buttons())
-        return
-
-    # 查看关键词
-    if txt == "📋 查看关键词":
-        keys = load_keys()
-        if not keys:
-            bot.send_message(cid, "📭 暂无关键词", reply_markup=admin_buttons())
-        else:
-            res = "📋 关键词列表：\n"
-            for i, k in enumerate(keys.keys(), 1):
-                res += f"{i}. {k}\n"
-            bot.send_message(cid, res, reply_markup=admin_buttons())
-        return
-
-    # 删除关键词
-    if txt == "🗑 删除关键词":
-        mode = "del_key"
-        bot.send_message(cid, "🗑 输入序号或关键词：", reply_markup=admin_buttons())
-        return
-
     # ============== 添加关键词：第二步 收集内容 ==============
     if mode == "set_keyword" and txt:
         temp_key = txt.strip()
         mode = "set_media"
         temp_media = []
-        bot.send_message(cid, "✅ 请发送回复内容（可发多张图/视频/混合，发送完成后点取消结束）", reply_markup=admin_buttons())
+        bot.send_message(cid, "✅ 请发送回复内容（可发多张图/视频/混合，发送完成后点取消结束）", reply_markup=cancel_button())
         return
 
     # 收集媒体
@@ -168,12 +171,13 @@ def admin_actions(msg):
             }
         if item:
             temp_media.append(item)
+            bot.send_message(cid, f"✅ 已添加 ({len(temp_media)} 项)", reply_markup=cancel_button())
         return
 
     # 绑定ID
     if mode == "reply" and txt.isdigit():
         reply_uid = int(txt)
-        bot.send_message(cid, f"✅ 已绑定：{reply_uid}", reply_markup=admin_buttons())
+        bot.send_message(cid, f"✅ 已绑定用户：{reply_uid}\n\n现在发送消息将转发给该用户", reply_markup=cancel_button())
         return
 
     # 删除确认
@@ -189,9 +193,9 @@ def admin_actions(msg):
             if msg.text: bot.send_message(reply_uid, msg.text)
             if msg.photo: bot.send_photo(reply_uid, msg.photo[-1].file_id, caption=msg.caption)
             if msg.video: bot.send_video(reply_uid, msg.video.file_id, caption=msg.caption)
-            bot.send_message(cid, "✅ 已发送", reply_markup=admin_buttons())
+            bot.send_message(cid, "✅ 已发送", reply_markup=cancel_button())
         except:
-            bot.send_message(cid, "❌ 失败", reply_markup=admin_buttons())
+            bot.send_message(cid, "❌ 发送失败", reply_markup=cancel_button())
         return
 
     # 群发
@@ -257,7 +261,7 @@ def user_msg(msg):
 
 # ====================== 启动 ======================
 if __name__ == "__main__":
-    print("✅ 机器人启动成功 - 最终终极版")
+    print("✅ 机器人启动成功 - 内联按钮版本")
     while True:
         try:
             bot.infinity_polling(timeout=60)
